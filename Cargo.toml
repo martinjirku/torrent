@@ -1,0 +1,10 @@
+[package]
+name = "torrent"
+version = "0.1.0"
+authors = [
+    "Martin Jirku <martin.jirku@example.com>"
+]
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.23", features = ["derive"] }
