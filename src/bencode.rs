@@ -70,6 +70,14 @@ impl Tokenizer {
             // Int := "i" IntValue "e"
             Some('i') => self.next_int(),
             Some(c) if c.is_digit(10) => self.next_string(),
+            Some('d') => {
+                self.index += 1;
+                Ok(Token::DictStart)
+            },
+            Some('e') => {
+                self.index += 1;
+                Ok(Token::DictEnd)
+            },
             _ => Err("Invalid token".to_string()),
         }
     }
@@ -134,8 +142,24 @@ impl Parser {
     }
 
     fn parse_dict(&mut self) -> Result<Bencode, String> {
-        // let mut dict = HashMap::new();
-        todo!();
+        let mut dict = HashMap::new();
+        loop {
+            let dict_key = match self.tokenizer.next() {
+                Ok(Token::String(key)) => key,
+                Ok(Token::DictEnd) => return Ok(Bencode::Dict(dict)),
+                _ => return Err("Unexpected token".to_string()),
+            };
+            let value_token = match self.tokenizer.next() {
+                Ok(Token::Int(value)) => Bencode::Int(value),
+                Ok(Token::String(value)) => Bencode::String(value.clone()),
+                Ok(Token::DictStart) => match self.parse_dict() {
+                    Ok(value) => value,
+                    Err(e) => return Err("Unexpected token".to_string()),
+                },
+                _ => return Err("Unexpected token".to_string()),
+            };
+            dict.insert(dict_key, value_token);
+        }
     }
 }
 
@@ -166,16 +190,16 @@ mod tests {
         assert_eq!(bencode, Ok(Bencode::String("spam".to_string())));
     }
 
-    // #[test]
-    // fn test_decode_normal() {
-    //     let mut reader = std::io::Cursor::new("d3:cow3:moo4:spam4:eggse");
-    //     let parser = BencodeParser::new(&mut reader);
-    //     let bencode = parser.parse();
-    //     assert_eq!(bencode, Bencode::Dict(
-    //         vec![
-    //             ("cow".to_string(), Bencode::String("moo".to_string())),
-    //             ("spam".to_string(), Bencode::String("eggs".to_string()))
-    //         ].into_iter().collect()
-    //     ));
-    // }
+    #[test]
+    fn test_decode_normal() {
+        let mut reader = std::io::Cursor::new("d3:cow3:moo4:spam4:eggse");
+        let mut parser = Parser::new(&mut reader);
+        let bencode = parser.parse();
+        assert_eq!(bencode, Ok(Bencode::Dict(
+            vec![
+                ("cow".to_string(), Bencode::String("moo".to_string())),
+                ("spam".to_string(), Bencode::String("eggs".to_string()))
+            ].into_iter().collect()
+        )));
+    }
 }
