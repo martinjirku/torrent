@@ -35,7 +35,7 @@ fn main() {
                 println!("Parsing file: {:?}", file);
                 let mut reader = std::io::BufReader::new(std::fs::File::open(file).unwrap());
                 let mut parser = bencode::Parser::new(&mut reader);
-                print!("{:?}", parser.parse().unwrap());
+                print!("{:?}", parser.parse());
             }
             // Handle other subcommands here
         }
