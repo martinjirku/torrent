@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::bencode::Bencode;
 
 #[derive(Debug)]
@@ -30,30 +32,9 @@ impl TorrentFile {
     pub fn from_bencode(data: &Bencode) -> Result<TorrentFile, String> {
         match data {
             Bencode::Dict(data) => Ok(TorrentFile {
-                announce: match data.get("announce") {
-                    Some(Bencode::String(s)) => match String::from_utf8(s.clone()) {
-                        Ok(s) => s,
-                        Err(_) => return Err(String::from("Invalid announce string")),
-                    },
-                    _ => return Err(String::from("Invalid announce string")),
-                },
-                creation_date: match data.get("creation date") {
-                    Some(creation_date) => match creation_date {
-                        Bencode::Int(s) => Some(s.clone()),
-                        _ => return Err(String::from("Invalid creation date format")),
-                    },
-                    None => None,
-                },
-                created_by: match data.get("created by") {
-                    Some(created_by) => match created_by {
-                        Bencode::String(s) => match String::from_utf8(s.clone()) {
-                            Ok(s) => Some(s),
-                            _ => return Err(String::from("Invalid created by string")),
-                        },
-                        _ => return Err(String::from("Invalid created by type")),
-                    },
-                    None => None,
-                },
+                announce: extract_string(data, "announce")?,
+                creation_date: extract_option_i64(data, "creation date")?,
+                created_by: extract_optional_string(data, "created by")?,
                 info: match data.get("info") {
                     Some(info) => match Info::from_bencode(info) {
                         Ok(info) => info,
@@ -85,22 +66,9 @@ impl Info {
                     Some(_) => return Err(String::from("Invalid files type")),
                     None => None,
                 },
-                length: match data.get("length") {
-                    Some(Bencode::Int(i)) => Some(i.clone()),
-                    Some(_) => return Err(String::from("Invalid length type")),
-                    _ => None,
-                },
-                name: match data.get("name"){
-                    Some(Bencode::String(s)) => match String::from_utf8(s.clone()) {
-                        Ok(s) => s,
-                        Err(_) => return Err(String::from("Invalid name string")),
-                    },
-                    _ => return Err(String::from("Invalid name type")),
-                },
-                piece_length: match data.get("piece length") {
-                    Some(Bencode::Int(i)) => i.clone(),
-                    _ => return Err(String::from("Invalid piece length")),
-                },
+                length: extract_option_i64(data, "length")?,
+                name: extract_string(data, "name")?,
+                piece_length: extract_i64(data, "piece length")?,
                 pieces: match data.get("pieces") {
                     Some(Bencode::String(s)) => s.clone(),
                     _ => return Err(String::from("Invalid pieces")),
@@ -115,10 +83,7 @@ impl File {
     fn from_bencode(data: &Bencode) -> Result<File, String> {
         match data {
             Bencode::Dict(data) => Ok(File {
-                length: match data.get("length") {
-                    Some(Bencode::Int(s)) => s.clone(),
-                    _ => return Err(String::from("Invalid length")),
-                },
+                length: extract_i64(data, "length")?,
                 path: match data.get("path") {
                     Some(Bencode::List(p)) => {
                         let mut paths = vec![];
@@ -138,5 +103,43 @@ impl File {
             }),
             _ => Err(String::from("Expected dictionary for file")),
         }
+    }
+}
+
+// helper functions
+
+fn extract_string(data: &HashMap<String, Bencode>, key: &str) -> Result<String, String> {
+    match data.get(key) {
+        Some(Bencode::String(s)) => match String::from_utf8(s.clone()) {
+            Ok(s) => Ok(s),
+            Err(_) => return Err(String::from("Invalid announce string")),
+        },
+        _ => return Err(String::from("Invalid announce string")),
+    }
+}
+fn extract_optional_string(data: &HashMap<String, Bencode>, key: &str) -> Result<Option<String>, String> {
+    match data.get(key) {
+        Some(created_by) => match created_by {
+            Bencode::String(s) => match String::from_utf8(s.clone()) {
+                Ok(s) => Ok(Some(s.clone())),
+                _ => return Err(String::from("Invalid string")),
+            },
+            _ => return Err(String::from("Invalid created by type")),
+        },
+        None => Ok(None),
+    }
+}
+fn extract_i64(data: &HashMap<String, Bencode>, key: &str) -> Result<i64, String> {
+    match data.get(key) {
+        Some(Bencode::Int(i)) => Ok(i.clone()),
+        _ => return Err(String::from("Invalid i64")),
+    }
+}
+
+fn extract_option_i64(data: &HashMap<String, Bencode>, key: &str) -> Result<Option<i64>, String> {
+    match data.get(key) {
+        Some(Bencode::Int(i)) => Ok(Some(i.clone())),
+        Some(_) => return Err(String::from("Invalid option type")),
+        None => Ok(None),
     }
 }
