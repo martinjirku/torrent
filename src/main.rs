@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 mod bencode;
+mod torrent;
 
 #[derive(Parser)]
 #[command(
@@ -35,7 +36,15 @@ fn main() {
                 println!("Parsing file: {:?}", file);
                 let mut reader = std::io::BufReader::new(std::fs::File::open(file).unwrap());
                 let mut parser = bencode::Parser::new(&mut reader);
-                print!("{:?}", parser.parse());
+                match parser.parse() {
+                    Ok(data) => {
+                        let data = torrent::TorrentFile::from_bencode(&data);
+                        print!("{:?}", data);
+                    },
+                    Err(e) => {
+                        eprintln!("Error parsing file: {:?}", e);
+                    }
+                }
             }
             // Handle other subcommands here
         }
