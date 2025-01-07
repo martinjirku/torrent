@@ -1,31 +1,43 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::{self, Debug}};
 
 use super::bencode::Bencode;
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct TorrentFile {
-    announce: String,
-    created_by: Option<String>,
-    creation_date: Option<i64>,
-    info: Info,
+    pub announce: String,
+    pub created_by: Option<String>,
+    pub creation_date: Option<i64>,
+    pub info: Info,
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct Info {
-    files: Option<Vec<File>>,
-    length: Option<i64>,
-    name: String,
-    piece_length: i64,
-    pieces: Vec<u8>,
+pub struct Info {
+    pub files: Option<Vec<File>>,
+    pub length: Option<i64>,
+    pub name: String,
+    pub piece_length: i64,
+    pub pieces: Pieces,
+}
+
+pub struct Pieces(pub Vec<[u8; 20]>);
+
+impl Debug for Pieces {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let text: Vec<String> = self.0
+            .iter()
+            .map(|piece| format!("\"{}\"", &percent_encode(&piece)))
+            .collect();
+        write!(f, "Pieces {{ data: [{}] }}", text.join(", "))
+    }
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
-struct File {
-    length: i64,
-    path: Vec<String>,
+pub struct File {
+    pub length: i64,
+    pub path: Vec<String>,
 }
 
 impl TorrentFile {
@@ -69,10 +81,7 @@ impl Info {
                 length: extract_option_i64(data, "length")?,
                 name: extract_string(data, "name")?,
                 piece_length: extract_i64(data, "piece length")?,
-                pieces: match data.get("pieces") {
-                    Some(Bencode::String(s)) => s.clone(),
-                    _ => return Err(String::from("Invalid pieces")),
-                },
+                pieces: extract_pieces(data)?,
             }),
             _ => Err(String::from("Expected dictionary for info")),
         }
@@ -142,4 +151,30 @@ fn extract_option_i64(data: &HashMap<String, Bencode>, key: &str) -> Result<Opti
         Some(_) => return Err(String::from("Invalid option type")),
         None => Ok(None),
     }
+}
+
+pub fn percent_encode(bytes: &[u8; 20]) -> String {
+    let mut encoded = String::with_capacity(bytes.len() * 3);
+    for &byte in bytes {
+        encoded.push('%');
+        encoded.push_str(&format!("{:02X}", byte));
+    }
+    encoded
+}
+
+fn extract_pieces(data: &HashMap<String, Bencode>) -> Result<Pieces, String> {
+    let mut pieces = vec![];
+    match data.get("pieces") {
+        Some(Bencode::String(s)) => {
+            let mut i = 0;
+            while i < s.len() {
+                let piece: [u8; 20] = s[i..i+20].try_into().map_err(|_| "Invalid piece length")?;
+                pieces.push(piece);
+                i += 20;
+            }
+            Ok(Pieces(pieces) )
+        },
+        Some(_) => return Err(String::from("Invalid pieces type")),
+        None => Ok(Pieces(pieces)),
+    }   
 }
