@@ -43,7 +43,7 @@ pub struct File {
 impl TorrentFile {
     pub fn from_bencode(data: &Bencode) -> Result<TorrentFile, String> {
         match data {
-            Bencode::Dict(data) => Ok(TorrentFile {
+            Bencode::Dict(data, _) => Ok(TorrentFile {
                 announce: extract_string(data, "announce")?,
                 creation_date: extract_option_i64(data, "creation date")?,
                 created_by: extract_optional_string(data, "created by")?,
@@ -63,9 +63,9 @@ impl TorrentFile {
 impl Info {
     fn from_bencode(data: &Bencode) -> Result<Info, String> {
         match data {
-            Bencode::Dict(data) => Ok(Info {
+            Bencode::Dict(data, _) => Ok(Info {
                 files: match data.get("files") {
-                    Some(Bencode::List(b_files)) => {
+                    Some(Bencode::List(b_files, _)) => {
                         let mut files = vec![];
                         for file in b_files {
                             match File::from_bencode(file) {
@@ -91,14 +91,14 @@ impl Info {
 impl File {
     fn from_bencode(data: &Bencode) -> Result<File, String> {
         match data {
-            Bencode::Dict(data) => Ok(File {
+            Bencode::Dict(data, _) => Ok(File {
                 length: extract_i64(data, "length")?,
                 path: match data.get("path") {
-                    Some(Bencode::List(p)) => {
+                    Some(Bencode::List(p, _)) => {
                         let mut paths = vec![];
                         for p in p {
                             match p {
-                                Bencode::String(s) => match String::from_utf8(s.clone()) {
+                                Bencode::String(s, _) => match String::from_utf8(s.clone()) {
                                     Ok(s) => paths.push(s),
                                     Err(_) => return Err(String::from("Invalid path string")),
                                 },
@@ -119,7 +119,7 @@ impl File {
 
 fn extract_string(data: &HashMap<String, Bencode>, key: &str) -> Result<String, String> {
     match data.get(key) {
-        Some(Bencode::String(s)) => match String::from_utf8(s.clone()) {
+        Some(Bencode::String(s, _)) => match String::from_utf8(s.clone()) {
             Ok(s) => Ok(s),
             Err(_) => return Err(String::from("Invalid announce string")),
         },
@@ -129,7 +129,7 @@ fn extract_string(data: &HashMap<String, Bencode>, key: &str) -> Result<String, 
 fn extract_optional_string(data: &HashMap<String, Bencode>, key: &str) -> Result<Option<String>, String> {
     match data.get(key) {
         Some(created_by) => match created_by {
-            Bencode::String(s) => match String::from_utf8(s.clone()) {
+            Bencode::String(s, _) => match String::from_utf8(s.clone()) {
                 Ok(s) => Ok(Some(s.clone())),
                 _ => return Err(String::from("Invalid string")),
             },
@@ -140,14 +140,14 @@ fn extract_optional_string(data: &HashMap<String, Bencode>, key: &str) -> Result
 }
 fn extract_i64(data: &HashMap<String, Bencode>, key: &str) -> Result<i64, String> {
     match data.get(key) {
-        Some(Bencode::Int(i)) => Ok(i.clone()),
+        Some(Bencode::Int(i,_)) => Ok(i.clone()),
         _ => return Err(String::from("Invalid i64")),
     }
 }
 
 fn extract_option_i64(data: &HashMap<String, Bencode>, key: &str) -> Result<Option<i64>, String> {
     match data.get(key) {
-        Some(Bencode::Int(i)) => Ok(Some(i.clone())),
+        Some(Bencode::Int(i,_)) => Ok(Some(i.clone())),
         Some(_) => return Err(String::from("Invalid option type")),
         None => Ok(None),
     }
@@ -165,7 +165,7 @@ pub fn percent_encode(bytes: &[u8; 20]) -> String {
 fn extract_pieces(data: &HashMap<String, Bencode>) -> Result<Pieces, String> {
     let mut pieces = vec![];
     match data.get("pieces") {
-        Some(Bencode::String(s)) => {
+        Some(Bencode::String(s, _)) => {
             let mut i = 0;
             while i < s.len() {
                 let piece: [u8; 20] = s[i..i+20].try_into().map_err(|_| "Invalid piece length")?;
@@ -177,4 +177,8 @@ fn extract_pieces(data: &HashMap<String, Bencode>) -> Result<Pieces, String> {
         Some(_) => return Err(String::from("Invalid pieces type")),
         None => Ok(Pieces(pieces)),
     }   
+}
+
+fn _sha1_from_torrent_file(_data: &str) -> &[u8; 20] {
+    todo!()
 }

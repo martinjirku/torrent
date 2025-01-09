@@ -40,7 +40,6 @@ fn main() {
                     Ok(data) => {
                         let data = torrent::TorrentFile::from_bencode(&data).unwrap();
                         println!("");
-                        println!("---------------");
                         println!("announce: \"{}\"", data.announce);
                         println!("info:");
                         if let Some(l) = data.info.length {

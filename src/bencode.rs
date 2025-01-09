@@ -33,10 +33,16 @@ use std::io::Read;
 
 #[derive(Debug, PartialEq)]
 pub enum Bencode {
-    Int(i64),
-    String(Vec<u8>),
-    List(Vec<Bencode>),
-    Dict(HashMap<String, Bencode>),
+    Int(i64, Pos),
+    String(Vec<u8>, Pos),
+    List(Vec<Bencode>, Pos),
+    Dict(HashMap<String, Bencode>, Pos),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Pos {
+    start: usize,
+    end: usize
 }
 
 enum Token {
@@ -135,18 +141,23 @@ impl Parser {
     /// Parse the bencode data and return a Bencode enum
     /// This implementation is using a recursive descent parser algorithm
     pub fn parse(&mut self) -> Result<Bencode, String> {
+        let start = self.tokenizer.index;
         let next_token = self.tokenizer.next();
+        let pos = Pos {
+            start,
+            end: self.tokenizer.index
+        };
         match next_token {
-            Ok(Token::Int(value)) => Ok(Bencode::Int(value)),
-            Ok(Token::String(value)) => Ok(Bencode::String(value.clone())),
-            Ok(Token::DictStart) => self.parse_dict(),
-            Ok(Token::ListStart) => self.parse_list(),
+            Ok(Token::Int(value)) => Ok(Bencode::Int(value, pos)),
+            Ok(Token::String(value)) => Ok(Bencode::String(value.clone(), pos)),
+            Ok(Token::DictStart) => self.parse_dict(pos),
+            Ok(Token::ListStart) => self.parse_list(pos),
             Err(e) => Err(format!("parse: {}", e)),
             _ => Err("Unexpected token".to_string()),
         }
     }
 
-    fn parse_dict(&mut self) -> Result<Bencode, String> {
+    fn parse_dict(&mut self, pos: Pos) -> Result<Bencode, String> {
         let mut dict = HashMap::new();
         loop {
             let dict_key = match self.tokenizer.next() {
@@ -154,18 +165,19 @@ impl Parser {
                     Ok(value) => value,
                     Err(e) => return Err(e.to_string()),
                 },
-                Ok(Token::ListDictEnd) => return Ok(Bencode::Dict(dict)),
+                Ok(Token::ListDictEnd) => return Ok(Bencode::Dict(dict, Pos{end: self.idx(), ..pos})),
                 Err(e) => return Err(e),
                 _ => return Err("Unexpected token".to_string()),
             };
+            let start = self.idx();
             let value_token = match self.tokenizer.next() {
-                Ok(Token::Int(value)) => Bencode::Int(value),
-                Ok(Token::String(value)) => Bencode::String(value.clone()),
-                Ok(Token::DictStart) => match self.parse_dict() {
+                Ok(Token::Int(value)) => Bencode::Int(value, Pos{start, end: self.idx()}),
+                Ok(Token::String(value)) => Bencode::String(value.clone(), Pos{end: self.idx(), start }),
+                Ok(Token::DictStart) => match self.parse_dict(Pos{start: self.tokenizer.index, end: 0}) {
                     Ok(value) => value,
                     Err(e) => return Err(e),
                 },
-                Ok(Token::ListStart) => match self.parse_list() {
+                Ok(Token::ListStart) => match self.parse_list(Pos{start: self.tokenizer.index, end: 0}) {
                     Ok(value) => value,
                     Err(e) => return Err(e),
                 },
@@ -175,25 +187,29 @@ impl Parser {
             dict.insert(dict_key, value_token);
         }
     }
-    fn parse_list(&mut self) -> Result<Bencode, String> {
+    fn parse_list(&mut self, pos: Pos) -> Result<Bencode, String> {
         let mut list = Vec::new();
         loop {
+            let start = self.tokenizer.index;
             let token = match self.tokenizer.next() {
-                Ok(Token::Int(value)) => Bencode::Int(value),
-                Ok(Token::String(value)) => Bencode::String(value.clone()),
-                Ok(Token::DictStart) => match self.parse_dict() {
+                Ok(Token::Int(value)) => Bencode::Int(value, Pos{end: self.tokenizer.index, ..pos}),
+                Ok(Token::String(value)) => Bencode::String(value.clone(), Pos{ start, end: self.idx()}),
+                Ok(Token::DictStart) => match self.parse_dict(Pos{ start, end: 0}) {
                     Ok(value) => value,
                     Err(e) => return Err(e.clone()),
                 },
-                Ok(Token::ListStart) => match self.parse_list() {
+                Ok(Token::ListStart) => match self.parse_list(Pos{start, end: 0}) {
                     Ok(value) => value,
                     Err(e) => return Err(e.clone()),
                 },
-                Ok(Token::ListDictEnd) => return Ok(Bencode::List(list)),
+                Ok(Token::ListDictEnd) => return Ok(Bencode::List(list, Pos{ end: self.idx(), ..pos})),
                 Err(e) => return Err(e.clone()),
             };
             list.push(token);
         }
+    }
+    fn idx(&mut self) -> usize {
+        self.tokenizer.index
     }
 }
 
@@ -206,14 +222,14 @@ mod tests {
         let mut reader = std::io::Cursor::new("i42e");
         let mut parser = Parser::new(&mut reader);
         let bencode = parser.parse();
-        assert_eq!(bencode, Ok(Bencode::Int(42)));
+        assert_eq!(bencode, Ok(Bencode::Int(42, Pos{start: 0, end: 4})));
     }
     #[test]
     fn test_decode_int_minus_42() {
         let mut reader = std::io::Cursor::new("i-42e");
         let mut parser = Parser::new(&mut reader);
         let bencode = parser.parse();
-        assert_eq!(bencode, Ok(Bencode::Int(-42)));
+        assert_eq!(bencode, Ok(Bencode::Int(-42, Pos{start: 0, end: 5})));
     }
 
     #[test]
@@ -221,9 +237,8 @@ mod tests {
         let mut reader = std::io::Cursor::new("4:spam");
         let mut parser = Parser::new(&mut reader);
         let bencode = parser.parse();
-        assert_eq!(bencode, Ok(Bencode::String(b"spam".to_vec())));
+        assert_eq!(bencode, Ok(Bencode::String(b"spam".to_vec(), Pos{start:0, end: 6})));
     }
-
     #[test]
     fn test_decode_dict() {
         let mut reader = std::io::Cursor::new("d3:cow3:moo4:spam4:eggse");
@@ -231,12 +246,11 @@ mod tests {
         let bencode = parser.parse();
         assert_eq!(bencode, Ok(Bencode::Dict(
             vec![
-                ("cow".to_string(), Bencode::String(b"moo".to_vec())),
-                ("spam".to_string(), Bencode::String(b"eggs".to_vec()))
-            ].into_iter().collect()
+                ("cow".to_string(), Bencode::String(b"moo".to_vec(), Pos{start: 6, end: 11})),
+                ("spam".to_string(), Bencode::String(b"eggs".to_vec(), Pos{ start: 17, end: 23 }))
+            ].into_iter().collect(), Pos{start:0, end: 24}
         )));
     }
-
     #[test]
     fn test_decode_list() {
         let mut reader = std::io::Cursor::new("l4:spam4:eggse");
@@ -244,9 +258,9 @@ mod tests {
         let bencode = parser.parse();
         assert_eq!(bencode, Ok(Bencode::List(
             vec![
-                Bencode::String(b"spam".to_vec()),
-                Bencode::String(b"eggs".to_vec())
-            ]
+                Bencode::String(b"spam".to_vec(), Pos{start:1, end: 7}),
+                Bencode::String(b"eggs".to_vec(), Pos{start:7,end: 13})
+            ], Pos{start: 0, end: 14}
         )));
     }
 }
